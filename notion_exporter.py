@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 from typing import Dict, List
+from slugify import slugify
 
 from notion_client import NotionApiClient
 
@@ -45,7 +46,7 @@ class NotionCrawler(object):
             os.unlink(path)
 
     def dump(self, object_id, title, data):
-        with open(f"{self.export_folder}/{title}-{object_id}.json", "w") as fd:
+        with open(f"{self.export_folder}/{slugify(title)}-{object_id}.json", "w") as fd:
             json.dump(data, fd)
 
     def debug_block(self, block):
@@ -74,16 +75,22 @@ class NotionCrawler(object):
             block["children"] = []
             self.process_single_block(block.get("id"), block["children"])
 
+    def _child_title(self, block):
+        return block.get(block.get("type"), {}).get("title")
+
     def extract_next_page_to_visit(self, block):
         block_type = block.get("type", None)
         bid = block.get("id")
-        title = block.get("title", None)
 
         if block_type == "child_page":
-            self.buffer.append({"type": "page", "id": bid, "title": title})
+            self.buffer.append(
+                {"type": "page", "id": bid, "title": self._child_title(block)}
+            )
 
         if block_type == "child_database":
-            self.buffer.append({"type": "database", "id": bid, "title": title})
+            self.buffer.append(
+                {"type": "database", "id": bid, "title": self._child_title(block)}
+            )
 
         return block
 
@@ -97,9 +104,7 @@ class NotionCrawler(object):
                 return {"prop_name": name, "property_dict": prop}
 
     def _object_title(self, property_dict, prop_name=None):
-        if not prop_name:
-            prop_name = "title"
-        title_parts = property_dict.get(prop_name, [])
+        title_parts = property_dict.get("title", [])
         return "-".join([part.get("plain_text") for part in title_parts])
 
     def crawl_page(self, page_id, title=None):
@@ -128,7 +133,13 @@ class NotionCrawler(object):
 
         items = list(self.client.paginate_children_items(database_id))
         for item in items:
-            self.buffer.append({"type": "database_item", "id": item.get("id")})
+            self.buffer.append(
+                {
+                    "type": "database_item",
+                    "id": item.get("id"),
+                    "title": self._object_title(**self._title_property(item)),
+                }
+            )
         database["items"] = items
 
         title = title if title else self._object_title(database)

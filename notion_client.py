@@ -53,12 +53,16 @@ class NotionApiClient(object):
     @logged("wrapper")
     def _call_api(self, path, method="POST", payload_dict=None):
         sleep(1)
-        return requests.request(
-            method,
-            f"{self.BASE_URL}/{path}",
-            headers=self.default_headers(),
-            json=payload_dict,
-        ).json()
+        try:
+            return requests.request(
+                method,
+                f"{self.BASE_URL}/{path}",
+                headers=self.default_headers(),
+                json=payload_dict,
+            ).json()
+        except:
+            logging.exception(f"Unexpected exception caught while {method}ing {path} with {payload_dict}")
+            return {}
 
     def list_database_items(
         self, database_id, filter=None, sort_order=None, start_cursor=None
