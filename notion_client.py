@@ -52,7 +52,7 @@ class NotionApiClient(object):
 
     @logged("wrapper")
     def _call_api(self, path, method="POST", payload_dict=None):
-        sleep(1)
+        sleep(0.33)
         try:
             return requests.request(
                 method,

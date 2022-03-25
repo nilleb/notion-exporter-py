@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import sys
+from glob import glob
 from typing import Dict, List
 from slugify import slugify
 
@@ -16,7 +17,7 @@ class NotionCrawler(object):
     ) -> None:
         self.client = NotionApiClient(token)
         self.export_folder = export_folder
-        self._resume_buffer(root_pages, resume)
+        self._resume_buffer_and_visited(root_pages, resume)
 
         if not os.path.isdir(self.export_folder):
             os.makedirs(self.export_folder)
@@ -24,29 +25,48 @@ class NotionCrawler(object):
     def _buffer_file_path(self):
         return f"{self.export_folder}/buffer.json"
 
-    def _resume_buffer(self, buffer, resume):
-        self.buffer = buffer
+    def _visited_file_path(self):
+        return f"{self.export_folder}/visited.json"
 
+    def _compute_visited(self):
+        self.visited = {}
+        for filepath in glob(f"{self.export_folder}/*.json"):
+            uid = filepath[-41:-5]
+            self.visited[uid] = filepath
+
+    def _resume_buffer_and_visited(self, buffer, resume):
         if resume:
             try:
                 with open(self._buffer_file_path()) as fd:
-                    self.buffer = json.load(fd)
+                    self.buffer = list(json.load(fd))
             except:
                 pass
+            try:
+                with open(self._visited_file_path()) as fd:
+                    self.visited = dict(json.load(fd))
+            except:
+                self._compute_visited()
 
         if not self.buffer:
             self.buffer = buffer
 
-    def _persist_buffer(self):
-        path = self._buffer_file_path()
-        with open(path, "w") as fd:
-            json.dump(self.buffer, fd)
+        if not self.visited:
+            self.visited = {}
 
-        if not self.buffer and os.path.isfile(path):
-            os.unlink(path)
+    def _persist_buffer_and_history(self):
+        if self.buffer:
+            path = self._buffer_file_path()
+            with open(path, "w") as fd:
+                json.dump(self.buffer, fd)
+
+        path = self._visited_file_path()
+        with open(path, "w") as fd:
+            json.dump(self.visited, fd)
 
     def dump(self, object_id, title, data):
-        with open(f"{self.export_folder}/{slugify(title)}-{object_id}.json", "w") as fd:
+        title = slugify(title)[:64] if title else None
+        prefix = f"{title}-" if title else ""
+        with open(f"{self.export_folder}/{prefix}{object_id}.json", "w") as fd:
             json.dump(data, fd)
 
     def debug_block(self, block):
@@ -155,14 +175,17 @@ class NotionCrawler(object):
             uid = item.get("id")
             title = item.get("title")
 
-            if kind == "page":
-                self.crawl_page(uid, title=title)
-            elif kind == "database":
-                self.crawl_database(uid, title=title)
-            elif kind == "database_item":
-                self.crawl_database_item(uid, title=title)
+            if uid not in self.visited:
+                if kind == "page":
+                    self.crawl_page(uid, title=title)
+                elif kind == "database":
+                    self.crawl_database(uid, title=title)
+                elif kind == "database_item":
+                    self.crawl_database_item(uid, title=title)
 
-            self._persist_buffer()
+                self.visited[uid] = item
+
+            self._persist_buffer_and_history()
 
             item = self.buffer.pop(0) if self.buffer else None
 
