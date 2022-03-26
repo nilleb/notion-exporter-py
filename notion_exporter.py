@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import shutil
 import sys
 from glob import glob
 from typing import Dict, List
@@ -35,6 +36,9 @@ class NotionCrawler(object):
             self.visited[uid] = filepath
 
     def _resume_buffer_and_visited(self, buffer, resume):
+        self.buffer = []
+        self.visited = {}
+
         if resume:
             try:
                 with open(self._buffer_file_path()) as fd:
@@ -56,12 +60,19 @@ class NotionCrawler(object):
     def _persist_buffer_and_history(self):
         if self.buffer:
             path = self._buffer_file_path()
+
+            if os.path.exists(path):
+                shutil.copyfile(path, f"{path}.backup")
+
             with open(path, "w") as fd:
                 json.dump(self.buffer, fd)
 
         path = self._visited_file_path()
         with open(path, "w") as fd:
             json.dump(self.visited, fd)
+
+    def _buffer_append(self, type, id, title):
+        self.buffer.append({"type": type, "id": id, "title": title})
 
     def dump(self, object_id, title, data):
         title = slugify(title)[:64] if title else None
@@ -103,14 +114,10 @@ class NotionCrawler(object):
         bid = block.get("id")
 
         if block_type == "child_page":
-            self.buffer.append(
-                {"type": "page", "id": bid, "title": self._child_title(block)}
-            )
+            self._buffer_append("page", bid, self._child_title(block))
 
         if block_type == "child_database":
-            self.buffer.append(
-                {"type": "database", "id": bid, "title": self._child_title(block)}
-            )
+            self._buffer_append("database", bid, self._child_title(block))
 
         return block
 
@@ -153,12 +160,10 @@ class NotionCrawler(object):
 
         items = list(self.client.paginate_children_items(database_id))
         for item in items:
-            self.buffer.append(
-                {
-                    "type": "database_item",
-                    "id": item.get("id"),
-                    "title": self._object_title(**self._title_property(item)),
-                }
+            self._buffer_append(
+                "database_item",
+                item.get("id"),
+                self._object_title(**self._title_property(item)),
             )
         database["items"] = items
 
