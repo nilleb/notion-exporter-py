@@ -59,6 +59,7 @@ class NotionApiClient(object):
                 f"{self.BASE_URL}/{path}",
                 headers=self.default_headers(),
                 json=payload_dict,
+                timeout=30,
             ).json()
         except:
             logging.exception(f"Unexpected exception caught while {method}ing {path} with {payload_dict}")

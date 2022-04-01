@@ -14,7 +14,9 @@ from notion_client import NotionApiClient
 class Crawler(object):
     EXPORT_FOLDER = "notion-export"
 
-    def __init__(self, root_pages, export_folder=EXPORT_FOLDER, resume=False) -> None:
+    def __init__(
+        self, root_pages: List, export_folder: str = EXPORT_FOLDER, resume: bool = False
+    ) -> None:
         self.export_folder = export_folder
         self._resume_buffer_and_visited(root_pages, resume)
 
@@ -37,7 +39,7 @@ class Crawler(object):
         if resume:
             try:
                 with open(self._buffer_file_path()) as fd:
-                    self.buffer = list(json.load(fd))
+                    self.buffer = json.load(fd)
             except:
                 pass
             try:
@@ -48,6 +50,9 @@ class Crawler(object):
 
         if not self.buffer:
             self.buffer = buffer
+
+        if isinstance(buffer, list):
+            self.buffer = {item["id"]: item for item in self.buffer}
 
         if not self.visited:
             self.visited = {}
@@ -67,26 +72,30 @@ class Crawler(object):
             json.dump(self.visited, fd)
 
     def append_to_buffer(self, type, id, title):
-        self.buffer.append({"type": type, "id": id, "title": title})
+        self.buffer['id'] = {"type": type, "id": id, "title": title}
 
     def crawl(self):
         items = self.buffer
 
-        item = items.pop(0) if items else None
+        item = items.popitem() if items else None
 
+        count = 0
         while item:
+            _, item = item
             kind = item.get("type")
             uid = item.get("id")
             title = item.get("title")
 
             if uid not in self.visited:
-                logging.info(f"{datetime.utcnow().isoformat()} crawl {kind} {uid}")
+                count += 1
+                now = datetime.utcnow().isoformat()
+                logging.info(f"{now} {count} crawl {kind} {uid}")
                 getattr(self, f"crawl_{kind}")(uid, title)
                 self.visited[uid] = item
 
-            self._persist_buffer_and_history()
+                self._persist_buffer_and_history()
 
-            item = self.buffer.pop(0) if self.buffer else None
+            item = self.buffer.popitem() if self.buffer else None
 
 
 class NotionCrawler(Crawler):
