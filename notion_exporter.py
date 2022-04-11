@@ -5,7 +5,7 @@ from glob import glob
 from typing import Dict, List
 from slugify import slugify
 
-from notion_client import NotionApiClient
+from notion_client import NotionApiClient, format_id
 from crawler import Crawler
 
 
@@ -22,8 +22,7 @@ class NotionBaseCrawler(Crawler):
 
         if block_type == "child_page":
             self.append_to_buffer("page", bid, self._child_title(block))
-
-        if block_type == "child_database":
+        elif block_type == "child_database":
             self.append_to_buffer("database", bid, self._child_title(block))
 
         return block
@@ -52,14 +51,16 @@ class NotionExportCrawler(NotionBaseCrawler):
 
     def compute_visited(self):
         self.visited = {}
-        for filepath in glob(f"{self.export_folder}/*.json"):
+        path_expr = self._relative_file_path("*.json")
+        for filepath in glob(path_expr):
             uid = filepath[-41:-5]
             self.visited[uid] = filepath
 
     def dump(self, object_id, title, data):
         title = slugify(title)[:64] if title else None
         prefix = f"{title}-" if title else ""
-        with open(f"{self.export_folder}/{prefix}{object_id}.json", "w") as fd:
+        fp = self._relative_file_path(f"{prefix}{format_id(object_id)}.json")
+        with open(fp, "w") as fd:
             json.dump(data, fd)
 
     def debug_block(self, block):
