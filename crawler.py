@@ -24,6 +24,13 @@ class Crawler(object):
     def compute_visited(self):
         raise NotImplementedError("Please Implement this method")
 
+    def tear_down(self):
+        raise NotImplementedError("Please Implement this method")
+
+    def _relative_file_path(self, fp):
+        return f"{self.export_folder}/{fp}"
+
+
     def _buffer_file_path(self):
         return f"{self.export_folder}/buffer.json"
 
@@ -69,8 +76,19 @@ class Crawler(object):
         with open(path, "w") as fd:
             json.dump(self.visited, fd)
 
-    def append_to_buffer(self, type: str, id: str, title: str=None, parent: str=None):
-        self.buffer["id"] = {"type": type, "id": id, "title": title, "parent": parent}
+    def append_to_buffer(
+        self, type: str, uid: str, title: str = None, parent: str = None
+    ):
+        if uid in self.visited:
+            return
+        self.buffer[uid] = {"type": type, "id": uid, "title": title, "parent": parent}
+
+    def append_to_visited(
+        self, type: str, uid: str, title: str = None, parent: str = None
+    ):
+        if uid in self.visited:
+            raise Exception(f"Visiting twice {uid}")
+        self.visited[uid] = {"type": type, "id": uid, "title": title, "parent": parent}
 
     def crawl(self):
         items = self.buffer
@@ -84,10 +102,17 @@ class Crawler(object):
 
             if uid not in self.visited:
                 now = datetime.utcnow().isoformat()
-                logging.info(f"{now} ({len(self.visited)}✅ {len(self.buffer)}▶️) crawl {kind} {uid}")
-                getattr(self, f"crawl_{kind}")(uid, **item)
-                self.visited[uid] = item
-
-                self._persist_buffer_and_history()
+                logging.info(
+                    f"{now} ({len(self.visited)}✅ {len(self.buffer)}▶️) crawl {kind} {uid}"
+                )
+                try:
+                    getattr(self, f"crawl_{kind}")(uid, **item)
+                    self.visited[uid] = item
+                except:
+                    logging.exception("Unexpected exception caught: persisting buffer and visited.")
+                    self._persist_buffer_and_history()
+                    raise
 
             item = self.buffer.popitem() if self.buffer else None
+
+        self.tear_down()
