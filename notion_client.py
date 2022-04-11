@@ -1,3 +1,4 @@
+from datetime import datetime
 import logging
 from time import sleep
 import requests
@@ -41,6 +42,7 @@ class NotionApiClient(object):
     def __init__(self, token) -> None:
         super().__init__()
         self.token = token
+        self.last_call = datetime.now()
 
     def default_headers(self):
         return {
@@ -52,7 +54,10 @@ class NotionApiClient(object):
 
     @logged("wrapper")
     def _call_api(self, path, method="POST", payload_dict=None):
-        sleep(0.33)
+        how_long = self.last_call + 0.33 - datetime.now()
+        if how_long > 0:
+            sleep(how_long)
+
         try:
             return requests.request(
                 method,
@@ -64,6 +69,8 @@ class NotionApiClient(object):
         except:
             logging.exception(f"Unexpected exception caught while {method}ing {path} with {payload_dict}")
             return {}
+        finally:
+            self.last_call = datetime.now()
 
     def list_database_items(
         self, database_id, filter=None, sort_order=None, start_cursor=None
