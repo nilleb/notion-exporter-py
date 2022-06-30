@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from time import sleep
 import requests
@@ -54,9 +54,10 @@ class NotionApiClient(object):
 
     @logged("wrapper")
     def _call_api(self, path, method="POST", payload_dict=None):
-        how_long = self.last_call + 0.33 - datetime.now()
-        if how_long > 0:
-            sleep(how_long)
+        delta = timedelta(seconds=0.33)
+        how_long = self.last_call + delta - datetime.now()
+        if how_long.microseconds > 0:
+            sleep(how_long.microseconds/1000000)
 
         try:
             return requests.request(
@@ -120,6 +121,10 @@ class NotionApiClient(object):
 
     def get_page(self, page_id):
         return self._call_api(f"pages/{page_id}", method="GET")
+
+    def create_page(self, parent_id, page):
+        page['parent_id'] = parent_id
+        return self._call_api(f"pages", payload_dict=page)
 
     def retrieve_children_blocks(self, block_id, page_size=100, start_cursor=None):
         url = f"blocks/{block_id}/children?page_size={page_size}"
