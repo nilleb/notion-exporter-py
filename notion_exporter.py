@@ -99,12 +99,11 @@ class NotionExportCrawler(NotionBaseCrawler):
         has_children = block.get("has_children")
 
         if has_children and block_type not in ("child_page", "child_database"):
-            children = block.get("children", [])
+            children = block[block_type].get("children", [])
             children = self.process_single_block(
                 block.get("id"), block.get("children", [])
             )
-            block["children"] = children
-            print(block)
+            block[block_type]["children"] = children
 
     def crawl_page(self, page_id, title=None, **kwargs):
         page = self.client.get_page(page_id)

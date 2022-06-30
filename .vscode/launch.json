@@ -5,11 +5,29 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: debug exporter for ls",
+            "name": "Python: debug importer",
+            "type": "python",
+            "request": "launch",
+            "program": "./notion_importer.py",
+            "args": ["samples/import.json"],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: debug exporter",
             "type": "python",
             "request": "launch",
             "program": "./notion_exporter.py",
-            "args": ["samples/sample.json"],
+            "args": ["samples/export.json"],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Python: debug template",
+            "type": "python",
+            "request": "launch",
+            "program": "././notion_dbitem_to_page.py",
+            "args": ["samples/private/jobdesc_apply_template.json"],
             "console": "integratedTerminal",
             "justMyCode": true
         },

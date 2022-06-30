@@ -122,8 +122,7 @@ class NotionApiClient(object):
     def get_page(self, page_id):
         return self._call_api(f"pages/{page_id}", method="GET")
 
-    def create_page(self, parent_id, page):
-        page['parent_id'] = parent_id
+    def create_page(self, page):
         return self._call_api(f"pages", payload_dict=page)
 
     def retrieve_children_blocks(self, block_id, page_size=100, start_cursor=None):
