@@ -127,11 +127,12 @@ class NotionExportCrawler(NotionBaseCrawler):
         items = list(self.client.paginate_children_items(database_id))
         for item in items:
             self.append_to_buffer(
-                "database_item",
+                "page",
                 item.get("id"),
                 self._object_title(**self._title_property(item)),
             )
-        database["items"] = items
+
+        database["items"] = [item['id'] for item in items]
 
         title = title if title else self._object_title(database)
         return self.dump(database_id, title, database)
