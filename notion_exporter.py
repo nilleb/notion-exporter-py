@@ -4,10 +4,11 @@ import os
 import sys
 from glob import glob
 from typing import Dict, List
+
 from slugify import slugify
 
-from notion_client import NotionApiClient, format_id
 from crawler import Crawler
+from notion_client import NotionApiClient, format_id
 
 
 class NotionBaseCrawler(Crawler):
@@ -43,6 +44,12 @@ class NotionBaseCrawler(Crawler):
     def _object_title(self, property_dict, prop_name=None):
         title_parts = property_dict.get("title", [])
         return "-".join([part.get("plain_text") for part in title_parts])
+
+    def _document_title(self, obj):
+        prop = self._title_property(obj)
+        return next(iter(prop.get("property_dict", {}).get("title", [])), {}).get(
+            "plain_text"
+        )
 
 
 class NotionExportCrawler(NotionBaseCrawler):
@@ -94,12 +101,22 @@ class NotionExportCrawler(NotionBaseCrawler):
             children_blocks.append(block)
         return children_blocks
 
+    def resolve_properties(self, block):
+        props = block.get("properties", {})
+        for name, prop in props.items():
+            prop_type = prop.get("type")
+            if prop_type in ("relation"):
+                item_id = next(iter(prop[prop["type"]]), {}).get("id")
+                if item_id:
+                    block = self.client.get_block(item_id)
+                    value = block[block["type"]]["title"]
+                    prop[prop_type] = [{"type": "title", "title": value}]
+
     def extract_children_blocks(self, block):
         block_type = block.get("type", None)
         has_children = block.get("has_children")
 
         if has_children and block_type not in ("child_page", "child_database"):
-            children = block[block_type].get("children", [])
             children = self.process_single_block(
                 block.get("id"), block.get("children", [])
             )
@@ -113,6 +130,7 @@ class NotionExportCrawler(NotionBaseCrawler):
 
         blocks = self.process_single_block(page_id)
         page["children"] = blocks
+        self.resolve_properties(page)
         title = title if title else self._object_title(**self._title_property(page))
 
         return self.dump(page_id, title, page)
@@ -132,10 +150,13 @@ class NotionExportCrawler(NotionBaseCrawler):
                 self._object_title(**self._title_property(item)),
             )
 
-        database["items"] = [item['id'] for item in items]
+        database["items"] = [item["id"] for item in items]
 
         title = title if title else self._object_title(database)
         return self.dump(database_id, title, database)
+
+    def tear_down(self):
+        pass
 
 
 if __name__ == "__main__":

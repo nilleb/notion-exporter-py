@@ -1,9 +1,9 @@
+import json
 import logging
 import sys
-import json
 import unicodedata
-from notion_client import NotionApiClient, format_id
 
+from notion_client import NotionApiClient, format_id
 from notion_exporter import NotionExportCrawler
 
 
@@ -14,20 +14,21 @@ class NotionTemplateApplier(NotionExportCrawler):
         template_id,
         destination_parent_id,
         database_item_id,
-        title=None,
         **kwargs,
     ) -> None:
         super().__init__(token, **kwargs, export_folder="dumps", root_pages=[])
         self.database_item_id = database_item_id
         self.destination_parent_id = destination_parent_id
         self.template_id = template_id
-        self.title = title
 
     def apply(self):
-        template_path = self.crawl_page(self.template_id)
         data_path = self.crawl_page(self.database_item_id)
+        template_path = self.crawl_page(self.template_id)
+        self.crawl()
+        data = json.load(open(data_path))
+        title = self._document_title(data)
         page = fill_template_with_data(
-            template_path, data_path, self.destination_parent_id, self.title
+            template_path, data_path, self.destination_parent_id, title
         )
 
         with open(self.export_folder + "/future_page.json", "w") as fd:
@@ -80,6 +81,40 @@ def identity(value):
     return value
 
 
+def array_property_value(value):
+    return ", ".join(
+        [eval_value(val["type"], val[val["type"]]) for val in value["array"]]
+    )
+
+
+def rollup_property_value(value):
+    return eval_value(value["type"], value)
+
+
+def simple_property_value(value):
+    return value[value["type"]]
+
+
+def relation_property_value(value):
+    if value:
+        return simple_property_value(value[0])
+
+
+def eval_value(prop_type, value):
+    functions = {
+        "date": date_property_value,
+        "number": identity,
+        "title": text_property_value,
+        "rich_text": text_property_value,
+        "rollup": rollup_property_value,
+        "array": array_property_value,
+        "relation": relation_property_value,
+    }
+    func = functions.get(prop_type, repr)
+    new_value = func(value)
+    return new_value
+
+
 class Walker(object):
     def __init__(self, transform):
         self.transform = transform
@@ -114,8 +149,6 @@ def fill_template_with_data(template_path, data_path, parent_id, title):
     with open(data_path, encoding="utf-8") as fd:
         data = json.load(fd)
 
-    # FIXME drop all the children databases in the template
-
     remove_useless_properties_for_create(template)
 
     template["parent"] = {"type": "page_id", "page_id": format_id(parent_id)}
@@ -147,14 +180,7 @@ def fill_template_with_data(template_path, data_path, parent_id, title):
     for name, prop in data.get("properties", {}).items():
         prop_type = prop.get("type")
         value = prop.get(prop_type)
-        functions = {
-            "date": date_property_value,
-            "number": identity,
-            "title": text_property_value,
-            "rich_text": text_property_value,
-        }
-        func = functions.get(prop_type, repr)
-        new_value = func(value)
+        new_value = eval_value(prop_type, value)
         token = f"{{{{{name}}}}}"
         props[token] = str(new_value)
 

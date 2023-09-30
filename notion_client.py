@@ -1,6 +1,7 @@
-from datetime import datetime, timedelta
 import logging
+from datetime import datetime, timedelta
 from time import sleep
+
 import requests
 
 VERSION = "2022-02-22"
@@ -57,7 +58,7 @@ class NotionApiClient(object):
         delta = timedelta(seconds=0.33)
         how_long = self.last_call + delta - datetime.now()
         if how_long.microseconds > 0:
-            sleep(how_long.microseconds/1000000)
+            sleep(how_long.microseconds / 1000000)
 
         try:
             return requests.request(
@@ -68,7 +69,9 @@ class NotionApiClient(object):
                 timeout=30,
             ).json()
         except:
-            logging.exception(f"Unexpected exception caught while {method}ing {path} with {payload_dict}")
+            logging.exception(
+                f"Unexpected exception caught while {method}ing {path} with {payload_dict}"
+            )
             return {}
         finally:
             self.last_call = datetime.now()
@@ -123,7 +126,7 @@ class NotionApiClient(object):
         return self._call_api(f"pages/{page_id}", method="GET")
 
     def create_page(self, page):
-        return self._call_api(f"pages", payload_dict=page)
+        return self._call_api("pages", payload_dict=page)
 
     def retrieve_children_blocks(self, block_id, page_size=100, start_cursor=None):
         url = f"blocks/{block_id}/children?page_size={page_size}"
@@ -148,6 +151,13 @@ class NotionApiClient(object):
     def paginate_children_items(self, page_id):
         for item in self._paginate(page_id, self.list_database_items):
             yield item
+
+    def get_property_value(self, page_id, property_id):
+        url = f"pages/{page_id}/properties/{property_id}"
+        return self._call_api(url, method="GET")
+
+    def get_block(self, block_id):
+        return self._call_api(f"blocks/{block_id}", method="GET")
 
 
 def sample():
