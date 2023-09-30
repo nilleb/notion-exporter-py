@@ -7,7 +7,8 @@ from glob import glob
 
 from jsonpath_ng.ext import parse
 
-from notion_client import format_id
+import functions
+from notion_client import NotionApiClient, format_id
 from notion_exporter import NotionExportCrawler, document_title
 
 
@@ -104,6 +105,10 @@ def relation_property_value(value):
         return simple_property_value(value[0])
 
 
+def select_property_value(value):
+    return value["name"]
+
+
 def eval_value(prop_type, value):
     functions = {
         "date": date_property_value,
@@ -113,6 +118,8 @@ def eval_value(prop_type, value):
         "rollup": rollup_property_value,
         "array": array_property_value,
         "relation": relation_property_value,
+        "formula": simple_property_value,
+        "select": select_property_value,
     }
     func = functions.get(prop_type, repr)
     new_value = func(value)
@@ -122,29 +129,49 @@ def eval_value(prop_type, value):
 class Walker(object):
     def __init__(self, transform):
         self.transform = transform
+        self.current_block = None
+        self.transformed_blocks = []
+
+    def replace(self, value):
+        return self.transformed_blocks.append((self.current_block, value))
 
     def walk_list(self, source):
         for value in source:
             if isinstance(value, dict):
                 yield self.walk_dict(value)
             elif isinstance(value, str):
-                result = self.transform(value)
+                result = self.transform(value, replace=self.replace)
                 yield result
             else:
                 yield value
 
     def walk_dict(self, source):
+        if source.get("object") == "block":
+            self.current_block = source
+
         for key, value in source.items():
             if isinstance(value, dict):
                 self.walk_dict(value)
             elif isinstance(value, list):
                 source[key] = list(self.walk_list(value))
             elif isinstance(value, str):
-                result = self.transform(value)
+                result = self.transform(value, replace=self.replace)
                 source[key] = result
             else:
                 source[key] = value
+
         return source
+
+    def update_block(self, original, processed):
+        original.clear()
+        original.update(processed)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        for original, processed in self.transformed_blocks:
+            self.update_block(original, processed)
 
 
 def discover_notion_docs(data_path):
@@ -227,15 +254,19 @@ def _fill_template_with_data(template, data, parent_id, title):
         token = f"{{{{{name}}}}}"
         props[token] = str(new_value)
 
-    def transform(val):
+    def transform(val, replace):
         if "{{" in val and "}}" in val:
             uval = unicodedata.normalize("NFC", val).replace("’", "'")
 
-            if "line_items(" in uval:
-                expr = uval.split("line_items('")[1].split(")'")[0]
-                jsonpath_expression = parse(expr)
-                line_items = [match for match in jsonpath_expression.find(data)]
-                print(len(line_items))
+            if "(" in uval and ")" in uval:
+                fun_name = uval.split("(")[0].split("{{")[1]
+                fun = getattr(functions, fun_name, None)
+                if fun:
+                    expr = uval.split("('")[1].split(")'")[0]
+                    jsonpath_expression = parse(expr)
+                    matches = [match for match in jsonpath_expression.find(data)]
+                    new_block = fun(matches, eval_property_value=eval_value)
+                    replace(new_block)
 
             for token, new_value in props.items():
                 utoken = unicodedata.normalize("NFC", token).replace("’", "'")
@@ -244,9 +275,8 @@ def _fill_template_with_data(template, data, parent_id, title):
 
         return val
 
-    logging.info(props)
-
-    Walker(transform).walk_dict(template)
+    with Walker(transform) as walker:
+        walker.walk_dict(template)
 
     return template
 
@@ -276,6 +306,9 @@ def test():
     page = fill_template_with_data(template, data, parent_id, "test")
     with open("dumps/future_page.json", "w") as fd:
         json.dump(page, fd)
+    client = NotionApiClient(job_desc.get("token"))
+    response = client.create_page(page)
+    print(response)
 
 
 if __name__ == "__main__":
