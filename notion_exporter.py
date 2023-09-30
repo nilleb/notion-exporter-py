@@ -11,6 +11,31 @@ from crawler import Crawler
 from notion_client import NotionApiClient, format_id
 
 
+def title_property(obj):
+    properties = obj.get("properties", {})
+    if "title" in properties:
+        return {"prop_name": "title", "property_dict": properties.get("title", {})}
+
+    for name, prop in properties.items():
+        prop_type = prop.get("type")
+        if prop_type == "title":
+            return {"prop_name": name, "property_dict": prop}
+
+    return {"prop_name": "missing", "property_dict": {"missing": "Default Title"}}
+
+
+def object_title(property_dict, prop_name=None):
+    title_parts = property_dict.get("title", [])
+    return "-".join([part.get("plain_text") for part in title_parts])
+
+
+def document_title(obj):
+    prop = title_property(obj)
+    return next(iter(prop.get("property_dict", {}).get("title", [])), {}).get(
+        "plain_text"
+    )
+
+
 class NotionBaseCrawler(Crawler):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -28,28 +53,6 @@ class NotionBaseCrawler(Crawler):
             self.append_to_buffer("database", bid, self._child_title(block))
 
         return block
-
-    def _title_property(self, obj):
-        properties = obj.get("properties", {})
-        if "title" in properties:
-            return {"prop_name": "title", "property_dict": properties.get("title", {})}
-
-        for name, prop in properties.items():
-            prop_type = prop.get("type")
-            if prop_type == "title":
-                return {"prop_name": name, "property_dict": prop}
-
-        return {"prop_name": "missing", "property_dict": {"missing": "Default Title"}}
-
-    def _object_title(self, property_dict, prop_name=None):
-        title_parts = property_dict.get("title", [])
-        return "-".join([part.get("plain_text") for part in title_parts])
-
-    def _document_title(self, obj):
-        prop = self._title_property(obj)
-        return next(iter(prop.get("property_dict", {}).get("title", [])), {}).get(
-            "plain_text"
-        )
 
 
 class NotionExportCrawler(NotionBaseCrawler):
@@ -131,7 +134,7 @@ class NotionExportCrawler(NotionBaseCrawler):
         blocks = self.process_single_block(page_id)
         page["children"] = blocks
         self.resolve_properties(page)
-        title = title if title else self._object_title(**self._title_property(page))
+        title = title if title else object_title(**title_property(page))
 
         return self.dump(page_id, title, page)
 
@@ -147,12 +150,12 @@ class NotionExportCrawler(NotionBaseCrawler):
             self.append_to_buffer(
                 "page",
                 item.get("id"),
-                self._object_title(**self._title_property(item)),
+                object_title(**title_property(item)),
             )
 
         database["items"] = [item["id"] for item in items]
 
-        title = title if title else self._object_title(database)
+        title = title if title else object_title(database)
         return self.dump(database_id, title, database)
 
     def tear_down(self):

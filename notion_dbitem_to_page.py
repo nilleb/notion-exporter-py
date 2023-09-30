@@ -1,10 +1,14 @@
 import json
 import logging
+import os
 import sys
 import unicodedata
+from glob import glob
 
-from notion_client import NotionApiClient, format_id
-from notion_exporter import NotionExportCrawler
+from jsonpath_ng.ext import parse
+
+from notion_client import format_id
+from notion_exporter import NotionExportCrawler, document_title
 
 
 class NotionTemplateApplier(NotionExportCrawler):
@@ -26,7 +30,7 @@ class NotionTemplateApplier(NotionExportCrawler):
         template_path = self.crawl_page(self.template_id)
         self.crawl()
         data = json.load(open(data_path))
-        title = self._document_title(data)
+        title = document_title(data)
         page = fill_template_with_data(
             template_path, data_path, self.destination_parent_id, title
         )
@@ -143,12 +147,51 @@ class Walker(object):
         return source
 
 
-def fill_template_with_data(template_path, data_path, parent_id, title):
-    with open(template_path, encoding="utf-8") as fd:
-        template = json.load(fd)
+def discover_notion_docs(data_path):
+    folder = os.path.dirname(os.path.abspath(data_path))
+    files = glob(f"{folder}/*.json")
+
+    db = {}
+    for fp in files:
+        object_title = fp.replace(".json", "").split("/")[-1]
+        uid = object_title[-36:]
+        if len(uid) == 36:
+            db[uid] = fp
+
+    return db
+
+
+def read_data_recursively(data_path, db):
     with open(data_path, encoding="utf-8") as fd:
         data = json.load(fd)
 
+    for child in data.get("children", []):
+        if child.get("type") == "child_database":
+            filename = db[child["id"]]
+            child["database"] = read_data_recursively(filename, db)
+
+    if data.get("items"):
+        items = []
+        for item in data.get("items", []):
+            filename = db[item]
+            items.append(read_data_recursively(filename, db))
+        data["items"] = items
+
+    return data
+
+
+def fill_template_with_data(template_path, data_path, parent_id, title):
+    with open(template_path, encoding="utf-8") as fd:
+        template = json.load(fd)
+
+    db = discover_notion_docs(data_path)
+    data = read_data_recursively(data_path, db)
+    json.dump(data, open("dumps/data.json", "w"), indent=2)
+
+    return _fill_template_with_data(template, data, parent_id, title)
+
+
+def _fill_template_with_data(template, data, parent_id, title):
     remove_useless_properties_for_create(template)
 
     template["parent"] = {"type": "page_id", "page_id": format_id(parent_id)}
@@ -186,6 +229,14 @@ def fill_template_with_data(template_path, data_path, parent_id, title):
 
     def transform(val):
         if "{{" in val and "}}" in val:
+            uval = unicodedata.normalize("NFC", val).replace("’", "'")
+
+            if "line_items(" in uval:
+                expr = uval.split("line_items('")[1].split(")'")[0]
+                jsonpath_expression = parse(expr)
+                line_items = [match for match in jsonpath_expression.find(data)]
+                print(len(line_items))
+
             for token, new_value in props.items():
                 utoken = unicodedata.normalize("NFC", token).replace("’", "'")
                 uval = unicodedata.normalize("NFC", val).replace("’", "'")
@@ -220,17 +271,11 @@ def test():
     with open(job_desc_file) as fp:
         job_desc = json.load(fp)
     template = "dumps/invoice-template-8ead81d2-43f2-4bcd-bf7f-34b5091cea80.json"
-    data = "dumps/2022-3-503d973c-0e1b-4582-a848-d15479099741.json"
+    data = "dumps/2023-09-29-f73e6c75-d34dc45f-f6dc-4288-89eb-cd7cb0ea0dad.json"
     parent_id = job_desc.get("destination_parent_id")
-    token = job_desc.get("token")
-    title = job_desc.get("title", "Generated page")
-    page = fill_template_with_data(template, data, parent_id, title)
+    page = fill_template_with_data(template, data, parent_id, "test")
     with open("dumps/future_page.json", "w") as fd:
         json.dump(page, fd)
-    response = NotionApiClient(token).create_page(page)
-    print(json.dumps(response))
-    # FIXME: display the uri of the created page
-    print(response.get("url"))
 
 
 if __name__ == "__main__":
