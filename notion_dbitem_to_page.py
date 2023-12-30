@@ -278,6 +278,8 @@ def _fill_template_with_data(template, data, parent_id, title):
     with Walker(transform) as walker:
         walker.walk_dict(template)
 
+    template.pop("request_id", None)
+
     return template
 
 
@@ -289,10 +291,7 @@ def main():
     with open(job_desc_file) as fp:
         job_desc = json.load(fp)
 
-    applier = NotionTemplateApplier(
-        **job_desc,
-    )
-
+    applier = NotionTemplateApplier(**job_desc)
     applier.apply()
 
 
