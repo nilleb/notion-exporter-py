@@ -54,7 +54,9 @@ def convert_json_to_invoice_dragon(items):
     return invoice_dragon_items
 
 
-def generate_pdf(invoice_dragon_items, template="template2", output_fn="output2.pdf"):
+def generate_pdf(
+    invoice_dragon_items, template="template2", output_fn="output2.pdf", **kwargs
+):
     url = "https://invoice-dragon.vercel.app/api/json"
     data = {
         "template": template,
@@ -62,10 +64,12 @@ def generate_pdf(invoice_dragon_items, template="template2", output_fn="output2.
         "businessName": "nillebco",
         "formName": "Invoice",
         "rows": invoice_dragon_items,
-        "logo": "https://media.licdn.com/dms/image/D4D0BAQF7gcaauOlIFQ/company-logo_100_100/0/1692942090951?e=1704326400&v=beta&t=enXpVsLOO1IkxqUM8AljVv4439UvwSYX2UgnQNOw0os",
+        "logo": "https://avatars.githubusercontent.com/u/108630435?s=400&u=8599aa94ae4bf40efd10bae56c0542e1a9009814&v=4",
     }
+    data.update(kwargs)
     response = requests.post(url, json=data)
-    response.raise_for_status()
+    if response.status_code != 200:
+        response.raise_for_status()
 
     ## save response body to pdf file
     with open(output_fn, "wb") as f:
@@ -86,11 +90,13 @@ data = read_data_recursively(data_path, db)
 items = convert_notion_to_json(data)
 invoice_dragon_items = convert_json_to_invoice_dragon(items)
 
-print("line items in the invoice:")
-print(json.dumps(invoice_dragon_items, indent=4))
-for idx in range(5):
+notes = get_value(data["properties"]["Notes"])
+
+for idx in range(4):
+    print(f"Generating invoice {idx + 1}...")
     generate_pdf(
         invoice_dragon_items,
-        template=f'template{idx if idx else ""}',
-        output_fn=f'output{idx if idx else ""}.pdf',
+        template=f"template{idx + 1}",
+        output_fn=f"output{idx + 1}.pdf",
+        notes=notes,
     )
