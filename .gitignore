@@ -131,3 +131,4 @@ dmypy.json
 private
 dumps
 *.pdf
+.DS_Store

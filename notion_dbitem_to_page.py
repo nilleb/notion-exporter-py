@@ -79,7 +79,7 @@ def date_property_value(value):
 
 
 def text_property_value(value):
-    return "{plain_text}".format(**value[0])
+    return "{plain_text}".format(**next(iter(value), {"plain_text": ""}))
 
 
 def identity(value):
@@ -122,7 +122,13 @@ def eval_value(prop_type, value):
         "select": select_property_value,
     }
     func = functions.get(prop_type, repr)
-    new_value = func(value)
+    try:
+        new_value = func(value)
+    except (KeyError, TypeError):
+        logging.exception(
+            f"Unexpected exception evaluating '{value}' of type '{prop_type}'"
+        )
+        new_value = value
     return new_value
 
 
